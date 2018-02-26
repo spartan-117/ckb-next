@@ -68,11 +68,11 @@ static char kbsyspath[DEV_MAX][FILENAME_MAX];
 ///
 int os_usbsend(usbdevice* kb, const uchar* out_msg, int is_recv, const char* file, int line) {
     int res;
-    // If we need to read a response, lock the mutex so that os_usbrecv() waits for the main thread.
-    if(is_recv)
-        pthread_mutex_lock(&kb->interruptmutex);
 
     if (kb->fwversion >= 0x120 || IS_V2_OVERRIDE(kb)){
+        // If we need to read a response, lock the mutex so that os_usbrecv() waits for the main thread.
+        if(is_recv)
+            pthread_mutex_lock(&kb->interruptmutex);
         struct usbdevfs_bulktransfer transfer = {0};
         // All firmware versions for normal HID devices have the OUT endpoint at the end.
         // Devices with no input, such as the Polaris, have it at the start.
@@ -371,7 +371,6 @@ void* os_inputmain(void* context){
             /// non RGB Keyboard | !IS_RGB && !IS_MOUSE | nA | nA | hid_kb_translate()
             ///
             pthread_mutex_lock(imutex(kb));
-
             #ifdef DEBUG_USB_INPUT
             char converted[urb->actual_length*3 + 1];
             for(int i=0;i<urb->actual_length;i++)
