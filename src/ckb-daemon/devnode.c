@@ -230,11 +230,11 @@ static int _mkdevpath(usbdevice* kb){
         _mknotifynode(kb, 0);
 
         // Write the model and serial to files
-        char mpath[sizeof(path) + 6], lpath[sizeof(path) + 7], spath[sizeof(path) + 7], ipath[sizeof(path) + 10];
+        char mpath[sizeof(path) + 6], spath[sizeof(path) + 7], ipath[sizeof(path) + 10], lpath[sizeof(path) + 7];
         snprintf(mpath, sizeof(mpath), "%s/model", path);
         snprintf(spath, sizeof(spath), "%s/serial", path);
         snprintf(ipath, sizeof(ipath), "%s/productid", path);
-	snprintf(lpath, sizeof(lpath), "%s/layout", path);
+        snprintf(lpath, sizeof(lpath), "%s/layout", path);
 
         char productid[5];
         snprintf(productid, 5, "%04x", kb->product);
