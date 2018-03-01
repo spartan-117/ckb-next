@@ -371,13 +371,6 @@ void* os_inputmain(void* context){
             /// non RGB Keyboard | !IS_RGB && !IS_MOUSE | nA | nA | hid_kb_translate()
             ///
             pthread_mutex_lock(imutex(kb));
-            #define DEBUG_USB_INPUT chad
-            #ifdef DEBUG_USB_INPUT
-            char converted[urb->actual_length*3 + 1];
-            for(int i=0;i<urb->actual_length;i++)
-                sprintf(&converted[i*3], "%02x ", ((uchar*)urb->buffer)[i]);
-            ckb_info("Input Recv %s\n", converted);
-            #endif
 
             // Get first byte of the response
             uchar firstbyte = ((uchar*)urb->buffer)[0];
@@ -386,26 +379,8 @@ void* os_inputmain(void* context){
                 memcpy(kb->interruptbuf, urb->buffer, MSG_SIZE);
                 // Unlock the mutex, signaling os_usbrecv() that the data is ready.
                 pthread_mutex_unlock(&kb->interruptmutex);
-            } else if(IS_MOUSE(vendor, product)) {
-                // HID Mouse Input
-                if(firstbyte <= 0x01)
-                    hid_mouse_translate(kb->input.keys, &kb->input.rel_x, &kb->input.rel_y, urb->actual_length, urb->buffer);
-                // Corsair Mouse Input
-                else if(firstbyte == 0x03)
-                    corsair_mousecopy(kb->input.keys, urb->buffer);
-                else
-                    ckb_err("Unknown mouse data received in input thread %x from endpoint %x\n", firstbyte, urb->endpoint);
-            } else {
-                // Assume Keyboard for everything else for now
-                // Accept NKRO only if device is active. 0x02 == media keys
-                if(firstbyte == 0x01 || firstbyte == 0x02) {
-                    if(!kb->active)
-                        hid_kb_translate(kb->input.keys, urb->actual_length, urb->buffer);
-                } else if(firstbyte == 0x03)
-                    corsair_kbcopy(kb->input.keys, urb->buffer);
-                else
-                    ckb_err("Unknown data received in input thread %x from endpoint %x\n", firstbyte, urb->endpoint);
-            }
+            } else
+                void process_input_urb(kb, urb->buffer, urb->actual_length, kb->endpoint);
             ///
             /// The input data is transformed and copied to the kb structure. Now give it to the OS and unlock the imutex afterwards.
             inputupdate(kb);

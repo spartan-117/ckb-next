@@ -272,6 +272,39 @@ const key keymap[N_KEYS_EXTENDED] = {
 // Since Corsair input packets are sent along with NKRO ones, in software mode, we need to ignore NKRO.
 // Handled by corsair_kbcopy()
 
+void process_input_urb(void* context, unsigned char *buffer, int urblen, ushort ep){
+    usbdevice* kb = context;
+    uchar firstbyte = buffer[0];
+    #define DEBUG_USB_INPUT chad
+    #ifdef DEBUG_USB_INPUT
+    char converted[urblen*3 + 1];
+    for(int i = 0; i < urblen; i++)
+        sprintf(&converted[i*3], "%02x ", buffer[i]);
+    ckb_info("Input Recv %s\n", converted);
+    #endif
+
+    if(IS_MOUSE_DEV(kb)) {
+        // HID Mouse Input
+        if(firstbyte <= 0x01)
+            hid_mouse_translate(kb->input.keys, &kb->input.rel_x, &kb->input.rel_y, urblen, buffer);
+        // Corsair Mouse Input
+        else if(firstbyte == 0x03)
+            corsair_mousecopy(kb->input.keys, buffer);
+        else
+            ckb_err("Unknown mouse data received in input thread %x from endpoint %x\n", firstbyte, ep);
+    } else {
+        // Assume Keyboard for everything else for now
+        // Accept NKRO only if device is active. 0x02 == media keys
+        if(firstbyte == 0x01 || firstbyte == 0x02) {
+            if(!kb->active)
+                hid_kb_translate(kb->input.keys, urblen, buffer);
+        } else if(firstbyte == 0x03)
+            corsair_kbcopy(kb->input.keys, buffer);
+        else
+            ckb_err("Unknown data received in input thread %x from endpoint %x\n", firstbyte, ep);
+    }
+}
+
 void hid_kb_translate(unsigned char* kbinput, int length, const unsigned char* urbinput){
     // LUT for HID -> Corsair scancodes (-1 for no scan code, -2 for currently unsupported)
     // Modified from Linux drivers/hid/usbhid/usbkbd.c, key codes replaced with keymap array indices and K95 keys added

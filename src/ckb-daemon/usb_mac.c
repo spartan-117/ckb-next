@@ -101,33 +101,9 @@ static int get_pipe_index(usb_iface_t handle, int desired_direction){
 
 int os_usbsend(usbdevice* kb, const uchar* out_msg, int is_recv, const char* file, int line){
     kern_return_t res = kIOReturnSuccess;
-    ///
-    /// \todo Be aware: This condition is exact inverted to the condition in the linux dependent os_usbsend(). It may be correct, but please check it.
-    if((kb->fwversion < 0x120 && !IS_V2_OVERRIDE(kb)) || is_recv){
-        int ep = kb->epcount;
-        // For old devices, or for receiving data, use control transfers
-        IOUSBDevRequestTO rq = { 0x21, 0x09, 0x0200, ep - 1, MSG_SIZE, (void*)out_msg, 0, 5000, 5000 };
-        res = (*kb->handle)->DeviceRequestTO(kb->handle, &rq);
-        if(res == kIOReturnNotOpen){
-            // Device handle not open - try to send directly to the endpoint instead
-            usb_iface_t h_usb = kb->ifusb[ep - 1];
-            hid_dev_t h_hid = kb->ifhid[ep - 1];
-            if(h_usb)
-                res = (*h_usb)->ControlRequestTO(h_usb, 0, &rq);
-            else if(h_hid)
-                res = (*h_hid)->setReport(h_hid, kIOHIDReportTypeFeature, 0, out_msg, MSG_SIZE, 5000, 0, 0, 0);
-        }
-    } else {
-        // For newer devices, use interrupt transfers
-        // macOS sees 4 endpoints (including ep0) for FW 3.XX
-        int ep = (kb->fwversion >= 0x130 && (kb->fwversion < 0x200 || kb->fwversion >= 0x300 || IS_V3_OVERRIDE(kb))) ? 4 : 3;
-        usb_iface_t h_usb = kb->ifusb[ep - 1];
-        hid_dev_t h_hid = kb->ifhid[ep - 1];
-        if(h_usb)
-            res = (*h_usb)->WritePipe(h_usb, get_pipe_index(h_usb, kUSBOut), (void*)out_msg, MSG_SIZE);
-        else if(h_hid)
-            res = (*h_hid)->setReport(h_hid, kIOHIDReportTypeOutput, 0, out_msg, MSG_SIZE, 5000, 0, 0, 0);
-    }
+    hid_dev_t h_hid = kb->ifhid[kb->epcount+1];
+    if(h_hid)
+        res = (*h_hid)->setReport(h_hid, kIOHIDReportTypeOutput, 0, out_msg, MSG_SIZE, 5000, 0, 0, 0);
     kb->lastresult = res;
     if(res != kIOReturnSuccess){
         ckb_err_fn("Got return value 0x%x\n", file, line, res);
@@ -140,19 +116,11 @@ int os_usbsend(usbdevice* kb, const uchar* out_msg, int is_recv, const char* fil
 }
 
 int os_usbrecv(usbdevice* kb, uchar* in_msg, const char* file, int line){
-    int ep = kb->epcount;
-    IOUSBDevRequestTO rq = { 0xa1, 0x01, 0x0200, ep - 1, MSG_SIZE, in_msg, 0, 5000, 5000 };
-    kern_return_t res = (*kb->handle)->DeviceRequestTO(kb->handle, &rq);
-    CFIndex length = rq.wLenDone;
-    if(res == kIOReturnNotOpen){
-        // Device handle not open - try to send directly to the endpoint instead
-        usb_iface_t h_usb = kb->ifusb[ep - 1];
-        hid_dev_t h_hid = kb->ifhid[ep - 1];
-        if(h_usb)
-            res = (*h_usb)->ControlRequestTO(h_usb, 0, &rq);
-        else if(h_hid)
-            res = (*h_hid)->getReport(h_hid, kIOHIDReportTypeFeature, 0, in_msg, &length, 5000, 0, 0, 0);
-    }
+    kern_return_t res = kIOReturnError;
+    CFIndex length;
+    hid_dev_t h_hid = kb->ifhid[kb->epcount+1];
+    if(h_hid)
+        res = (*h_hid)->getReport(h_hid, kIOHIDReportTypeFeature, 0, in_msg, &length, 5000, 0, 0, 0);
     kb->lastresult = res;
     if(res != kIOReturnSuccess){
         ckb_err_fn("Got return value 0x%x\n", file, line, res);
@@ -179,7 +147,7 @@ int _nk95cmd(usbdevice* kb, uchar bRequest, ushort wValue, const char* file, int
 void os_sendindicators(usbdevice* kb){
     void *ileds;
     ushort leds;
-    if(kb->fwversion >= 0x300 || IS_V3_OVERRIDE(kb)) {
+    /*if(kb->fwversion >= 0x300 || IS_V3_OVERRIDE(kb)) {
         leds = (kb->ileds << 8) | 0x0001;
         ileds = &leds;
     }
@@ -187,8 +155,8 @@ void os_sendindicators(usbdevice* kb){
         ileds = &kb->ileds;
     }
     IOUSBDevRequestTO rq = { 0x21, 0x09, 0x0200, 0x00, ((kb->fwversion >= 0x300 || IS_V3_OVERRIDE(kb)) ? 2 : 1), ileds, 0, 500, 500 };
-    kern_return_t res = (*kb->handle)->DeviceRequestTO(kb->handle, &rq);
-    if(res == kIOReturnNotOpen){
+    kern_return_t res = (*kb->handle)->DeviceRequestTO(kb->handle, &rq);*/
+    if(1){
         // Handle not open - try to go through the HID system instead
         hid_dev_t handle = kb->ifhid[0];
         if(handle){
@@ -216,8 +184,8 @@ void os_sendindicators(usbdevice* kb){
             CFRelease(leds);
         }
     }
-    if(res != kIOReturnSuccess)
-        ckb_err("Got return value 0x%x\n", res);
+    //if(res != kIOReturnSuccess)
+    //    ckb_err("Got return value 0x%x\n", res);
 }
 
 int os_resetusb(usbdevice* kb, const char* file, int line){
@@ -233,51 +201,7 @@ int os_resetusb(usbdevice* kb, const char* file, int line){
 static void intreport(void* context, IOReturn result, void* sender, IOHIDReportType reporttype, uint32_t reportid, uint8_t* data, CFIndex length){
     usbdevice* kb = context;
     pthread_mutex_lock(imutex(kb));
-    if(IS_MOUSE(kb->vendor, kb->product)){
-        switch(length){
-        case 7:
-        case 8:
-        case 10:
-        case 11:
-            hid_mouse_translate(kb->input.keys, &kb->input.rel_x, &kb->input.rel_y, -2, length, data, kb);
-            break;
-        case MSG_SIZE:
-            corsair_mousecopy(kb->input.keys, kb->epcount >= 4 ? -3 : -2, data);
-            break;
-        }
-    } else if(HAS_FEATURES(kb, FEAT_RGB)){
-        switch(length){
-        case 8:
-            // RGB EP 1: 6KRO (BIOS mode) input
-            hid_kb_translate(kb->input.keys, -1, length, data);
-            break;
-        case 21:
-        case 5:
-            // RGB EP 2: NKRO (non-BIOS) input. Accept only if keyboard is inactive
-            if(!kb->active)
-                hid_kb_translate(kb->input.keys, -2, length, data);
-            break;
-        case MSG_SIZE:
-            // RGB EP 3: Corsair input
-            corsair_kbcopy(kb->input.keys, kb->epcount >= 4 ? -3 : -2, data);
-            break;
-        }
-    } else {
-        switch(length){
-        case 8:
-            // Non-RGB EP 1: 6KRO input
-            hid_kb_translate(kb->input.keys, 1, length, data);
-            break;
-        case 4:
-            // Non-RGB EP 2: media keys
-            hid_kb_translate(kb->input.keys, 2, length, data);
-            break;
-        case 15:
-            // Non-RGB EP 3: NKRO input
-            hid_kb_translate(kb->input.keys, 3, length, data);
-            break;
-        }
-    }
+    process_input_urb(context, data, length, 0);
     inputupdate(kb);
     pthread_mutex_unlock(imutex(kb));
 }
@@ -789,9 +713,9 @@ static usbdevice* add_hid(hid_dev_t handle, io_object_t** rm_notify){
     int handle_idx;
 
     // The usbdevice struct is created later on, however in order to use IS_V3_OVERRIDE we need one with vendor and product, so a temporary one is created
-    struct {uint16_t vendor; uint16_t product;} *fakekb;
-    fakekb->vendor = idvendor;
-    fakekb->product = idproduct;
+    struct {uint16_t vendor; uint16_t product;} fakekb;
+    fakekb.vendor = idvendor;
+    fakekb.product = idproduct;
 
     // Handle 3 is for controlling the device (only exists for RGB)
     if(feature == 64)
@@ -808,7 +732,7 @@ static usbdevice* add_hid(hid_dev_t handle, io_object_t** rm_notify){
                 (input == 8 ||                  // Keyboards
                  input == 7)) ||                // Mice
             ((fwversion >= 0x300 ||             // FWv3 hack
-                IS_V3_OVERRIDE(fakekb)) &&
+                IS_V3_OVERRIDE(&fakekb)) &&
                 input == 64 &&
                 output <= 2 &&
                 feature == 1))

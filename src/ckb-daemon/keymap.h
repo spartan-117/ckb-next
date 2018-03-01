@@ -67,6 +67,9 @@ typedef struct {
 // Begins with keyboard keys, followed by extra keys, then mouse buttons, and finally LED zones
 extern const key keymap[N_KEYS_EXTENDED];
 
+// Decides which of the following functions it needs to call
+void process_input_urb(void* context, unsigned char* buffer, int urblen, ushort ep);
+
 // Translates input from HID to a ckb input bitfield.
 // Use positive endpoint for non-RGB keyboards, negative endpoint for RGB
 void hid_kb_translate(unsigned char* kbinput, int length, const unsigned char* urbinput);
