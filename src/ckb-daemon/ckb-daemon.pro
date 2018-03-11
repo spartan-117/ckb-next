@@ -50,7 +50,8 @@ SOURCES += \
     profile_keyboard.c \
     dpi.c \
     profile_mouse.c \
-    led_mousepad.c
+    led_mousepad.c \
+    profile_k95p.c
 
 HEADERS += \
     device.h \
